@@ -11,8 +11,8 @@ setGlobalOptions({
 // Phase 5 — Community Moderation
 export { onPostReported } from './moderation/onPostReported';
 
-// Phase 6+ — Notifications (coming soon)
-// export * from './notifications';
+// Phase 6+ — Notifications
+export * from './notifications';
 
-// Phase 9 — Admin Triggers (coming soon)
-// export * from './admin';
+// Phase 9 — Admin Triggers
+export * from './admin';
