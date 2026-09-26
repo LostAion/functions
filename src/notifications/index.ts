@@ -3,8 +3,9 @@
  *
  * Phase 6+: onNewLaw, onNewNews, onEmergencyBroadcast
  * Phase 7+: onIncidentReportStatusChanged
- *
- * No exports yet — implemented in future phases.
  */
 
-export {};
+export { onNewLaw } from './onNewLaw';
+export { onNewNews } from './onNewNews';
+export { onEmergencyBroadcast } from './onEmergencyBroadcast';
+export { onIncidentReportStatusChanged } from './onIncidentReportStatusChanged';
