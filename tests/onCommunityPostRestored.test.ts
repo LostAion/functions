@@ -18,10 +18,16 @@ const collectionMock = jest.fn((_collName: string) => ({
 }));
 const sendMock = jest.fn();
 const deleteSentinel = { __delete__: true };
+const txGetMock = jest.fn();
 
 jest.mock('../src/utils/firebase', () => ({
   db: {
     collection: (coll: string) => collectionMock(coll),
+    runTransaction: (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        get: txGetMock,
+        update: (_ref: unknown, data: unknown) => userUpdateMock(data),
+      }),
   },
   messaging: {
     send: (...args: unknown[]) => sendMock(...args),
@@ -196,6 +202,7 @@ describe('onCommunityPostRestored', () => {
       exists: true,
       data: () => ({ fcmToken: 'dead-author-tok-1' }),
     });
+    txGetMock.mockResolvedValueOnce({ exists: true, get: () => 'dead-author-tok-1' });
     sendMock.mockRejectedValueOnce({
       code: 'messaging/registration-token-not-registered',
       message: 'Token unregistered',
@@ -215,6 +222,7 @@ describe('onCommunityPostRestored', () => {
       exists: true,
       data: () => ({ fcmToken: 'dead-author-tok-2' }),
     });
+    txGetMock.mockResolvedValueOnce({ exists: true, get: () => 'dead-author-tok-2' });
     sendMock.mockRejectedValueOnce({
       code: 'messaging/invalid-registration-token',
       message: 'Token invalid',
@@ -227,6 +235,22 @@ describe('onCommunityPostRestored', () => {
     expect(userUpdateMock).toHaveBeenCalledWith({
       fcmToken: deleteSentinel,
     });
+  });
+
+  it('keeps a token the user replaced while the send was in flight', async () => {
+    userGetMock.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ fcmToken: 'stale-tok' }),
+    });
+    sendMock.mockRejectedValueOnce({
+      code: 'messaging/registration-token-not-registered',
+      message: 'Token unregistered',
+    });
+    txGetMock.mockResolvedValueOnce({ exists: true, get: () => 'fresh-tok' });
+
+    await runUpdate({ isHidden: true }, { isHidden: false });
+
+    expect(userUpdateMock).not.toHaveBeenCalled();
   });
 
   it('rethrows unexpected error and does not remove token', async () => {

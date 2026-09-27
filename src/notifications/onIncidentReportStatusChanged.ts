@@ -1,27 +1,16 @@
 import { logger } from 'firebase-functions';
 import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
 
-import type { IncidentReport } from '../types';
-import { db, FieldValue, messaging } from '../utils/firebase';
+import type { IncidentReport, IncidentStatus } from '../types';
+import { db, messaging } from '../utils/firebase';
+import { isDeadTokenError, removeDeadToken } from '../utils/fcm';
 
-/** FCM error codes indicating a registration token is dead and should be removed. */
-const DEAD_TOKEN_CODES = new Set<string>([
-  'messaging/invalid-registration-token',
-  'messaging/registration-token-not-registered',
-]);
-
-interface FirebaseErrorWithCode {
-  code?: string;
-}
-
-/** Extracts an error code from an unknown caught error, if present. */
-function getErrorCode(err: unknown): string | undefined {
-  if (typeof err === 'object' && err !== null && 'code' in err) {
-    const code = (err as FirebaseErrorWithCode).code;
-    return typeof code === 'string' ? code : undefined;
-  }
-  return undefined;
-}
+/** User-facing wording for each incident status. */
+const STATUS_LABELS: Record<IncidentStatus, string> = {
+  submitted: 'submitted',
+  under_review: 'under review',
+  resolved: 'resolved',
+};
 
 interface UserProfile {
   fcmToken?: string;
@@ -96,14 +85,16 @@ export const onIncidentReportStatusChanged = onDocumentUpdated(
       newStatus: after.status,
     });
 
-    const statusMessage = `Incident Report Update: Your report has been updated to ${after.status}.`;
+    const statusLabel = STATUS_LABELS[after.status] ?? String(after.status).replace(/_/g, ' ');
+    const statusBody = `Your report has been updated to ${statusLabel}.`;
+    const statusMessage = `Incident Report Update: ${statusBody}`;
 
     try {
       const messageId = await messaging.send({
         token: fcmToken,
         notification: {
           title: 'Incident Report Update',
-          body: `Your report has been updated to ${after.status}.`,
+          body: statusBody,
         },
         data: {
           type: 'incident_status_change',
@@ -125,15 +116,12 @@ export const onIncidentReportStatusChanged = onDocumentUpdated(
         messageId,
       });
     } catch (error: unknown) {
-      const errorCode = getErrorCode(error);
-      if (errorCode && DEAD_TOKEN_CODES.has(errorCode)) {
-        logger.warn('Removing dead FCM token for user', {
+      if (isDeadTokenError(error)) {
+        const removed = await removeDeadToken(userRef, fcmToken);
+        logger.warn('Dead FCM token for user', {
           reportId,
           userId: after.userId,
-          errorCode,
-        });
-        await userRef.update({
-          fcmToken: FieldValue.delete(),
+          removed,
         });
         return;
       }

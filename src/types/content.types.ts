@@ -18,6 +18,8 @@ export interface Law {
   tags: string[];
   order: number;
   isPublished: boolean;
+  /** Set by Cloud Functions once the publish push has been sent. */
+  notifiedAt?: FirebaseFirestore.Timestamp;
 }
 
 /** Mirrors Firestore `faqs/{faqId}`. */
@@ -50,4 +52,6 @@ export interface NewsItem {
   category: string;
   publishedAt: FirebaseFirestore.Timestamp;
   isPublished: boolean;
+  /** Set by Cloud Functions once the publish push has been sent. */
+  notifiedAt?: FirebaseFirestore.Timestamp;
 }

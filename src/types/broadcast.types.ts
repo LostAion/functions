@@ -1,10 +1,10 @@
 /**
- * Emergency broadcast domain models mirroring Firestore `broadcasts/{broadcastId}`.
+ * Emergency broadcast domain models mirroring Firestore `emergencyBroadcasts/{broadcastId}`.
  */
 
 export type BroadcastSeverity = 'critical' | 'high' | 'warning';
 
-/** Mirrors Firestore `broadcasts/{broadcastId}`. */
+/** Mirrors Firestore `emergencyBroadcasts/{broadcastId}`. */
 export interface EmergencyBroadcast {
   id: string;
   title: string;

@@ -2,25 +2,8 @@ import { logger } from 'firebase-functions';
 import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
 
 import type { CommunityPost } from '../types';
-import { db, FieldValue, messaging } from '../utils/firebase';
-
-/** FCM error codes that indicate an invalid/dead token that should be deleted. */
-const DEAD_TOKEN_CODES = new Set<string>([
-  'messaging/invalid-registration-token',
-  'messaging/registration-token-not-registered',
-]);
-
-interface FirebaseErrorWithCode {
-  code?: string;
-}
-
-function getErrorCode(err: unknown): string | undefined {
-  if (typeof err === 'object' && err !== null && 'code' in err) {
-    const code = (err as FirebaseErrorWithCode).code;
-    return typeof code === 'string' ? code : undefined;
-  }
-  return undefined;
-}
+import { db, messaging } from '../utils/firebase';
+import { isDeadTokenError, removeDeadToken } from '../utils/fcm';
 
 interface UserProfile {
   fcmToken?: string;
@@ -119,15 +102,12 @@ export const onCommunityPostRestored = onDocumentUpdated(
         messageId,
       });
     } catch (error: unknown) {
-      const errorCode = getErrorCode(error);
-      if (errorCode && DEAD_TOKEN_CODES.has(errorCode)) {
-        logger.warn('Removing dead FCM token for author', {
+      if (isDeadTokenError(error)) {
+        const removed = await removeDeadToken(userRef, fcmToken);
+        logger.warn('Dead FCM token for author', {
           postId,
           authorId: after.authorId,
-          errorCode,
-        });
-        await userRef.update({
-          fcmToken: FieldValue.delete(),
+          removed,
         });
         return;
       }

@@ -4,19 +4,35 @@ import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import type { EmergencyBroadcast } from '../types';
 import { messaging } from '../utils/firebase';
 
+const DEFAULT_TOPIC = 'emergency_alerts';
+
 /**
  * Resolves the FCM topic name for an emergency broadcast.
  * Returns the sanitized city topic if specified, or `'emergency_alerts'` if omitted or 'all'.
+ *
+ * FCM topics only allow `[a-zA-Z0-9-_.~%]`, so other characters are stripped and
+ * whitespace becomes `_`. If nothing valid remains (e.g. a non-Latin city name),
+ * falls back to `'emergency_alerts'` so the alert is still delivered.
  */
 function resolveTopic(city?: string): string {
   if (!city) {
-    return 'emergency_alerts';
+    return DEFAULT_TOPIC;
   }
   const trimmed = city.trim();
   if (trimmed.length === 0 || trimmed.toLowerCase() === 'all') {
-    return 'emergency_alerts';
+    return DEFAULT_TOPIC;
   }
-  return trimmed.replace(/\s+/g, '_');
+  const topic = trimmed
+    .replace(/[^a-zA-Z0-9\s\-_.~%]/g, '')
+    .trim()
+    .replace(/\s+/g, '_');
+  if (topic.length === 0) {
+    logger.warn('onEmergencyBroadcast: city has no topic-safe characters, using default topic', {
+      city,
+    });
+    return DEFAULT_TOPIC;
+  }
+  return topic;
 }
 
 /**

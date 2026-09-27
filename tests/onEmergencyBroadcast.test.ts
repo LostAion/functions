@@ -143,6 +143,25 @@ describe('onEmergencyBroadcast', () => {
     );
   });
 
+  it.each([
+    ['Bengaluru (Bangalore)', 'Bengaluru_Bangalore'],
+    ['Thiruvananthapuram, KL', 'Thiruvananthapuram_KL'],
+  ])('strips characters FCM topics do not allow (%s)', async (city, topic) => {
+    sendMock.mockResolvedValueOnce('msg-em-sanitized');
+
+    await runCreated({ city });
+
+    expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ topic }));
+  });
+
+  it('falls back to "emergency_alerts" when city has no topic-safe characters', async () => {
+    sendMock.mockResolvedValueOnce('msg-em-fallback');
+
+    await runCreated({ city: 'मुंबई' });
+
+    expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ topic: 'emergency_alerts' }));
+  });
+
   it('dispatches correct alert payload with max priority on android', async () => {
     sendMock.mockResolvedValueOnce('msg-em-full');
 

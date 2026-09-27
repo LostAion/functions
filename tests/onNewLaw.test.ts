@@ -7,16 +7,22 @@ const testEnv = functionsTest();
 // --- Mock the Firebase Admin SDK wrapper ---------------------------------------
 
 const sendMock = jest.fn();
+const docUpdateMock = jest.fn();
+const collectionMock = jest.fn((_collName: string) => ({
+  doc: (_id: string) => ({ update: docUpdateMock }),
+}));
+const timestampSentinel = { __serverTimestamp__: true };
 
 jest.mock('../src/utils/firebase', () => ({
   db: {
-    collection: jest.fn(),
+    collection: (coll: string) => collectionMock(coll),
   },
   messaging: {
     send: (...args: unknown[]) => sendMock(...args),
   },
   FieldValue: {
     delete: jest.fn(),
+    serverTimestamp: jest.fn(() => timestampSentinel),
   },
 }));
 
@@ -172,5 +178,33 @@ describe('onNewLaw', () => {
     await expect(runChange({ isPublished: false }, { isPublished: true })).rejects.toThrow(
       'FCM network failure',
     );
+  });
+
+  it('marks the document as notified after a successful send', async () => {
+    sendMock.mockResolvedValueOnce('msg-mark');
+    docUpdateMock.mockResolvedValueOnce(undefined);
+
+    await runChange({ isPublished: false }, { isPublished: true });
+
+    expect(collectionMock).toHaveBeenCalledWith('laws');
+    expect(docUpdateMock).toHaveBeenCalledWith({ notifiedAt: timestampSentinel });
+  });
+
+  it('does not re-notify when republished after an earlier notification', async () => {
+    await runChange(
+      { isPublished: false, notifiedAt: new Date() as never },
+      { isPublished: true, notifiedAt: new Date() as never },
+    );
+
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(docUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it('does not throw when marking as notified fails after a successful send', async () => {
+    sendMock.mockResolvedValueOnce('msg-mark-fail');
+    docUpdateMock.mockRejectedValueOnce(new Error('write failed'));
+
+    await expect(runChange({ isPublished: false }, { isPublished: true })).resolves.toBeUndefined();
+    expect(sendMock).toHaveBeenCalledTimes(1);
   });
 });

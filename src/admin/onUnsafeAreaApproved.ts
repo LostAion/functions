@@ -4,7 +4,6 @@ import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import type { UnsafeArea } from '../types';
 import { messaging } from '../utils/firebase';
 
-
 /**
  * Fires when an `unsafeAreas/{areaId}` document is updated.
  *
@@ -40,10 +39,13 @@ export const onUnsafeAreaApproved = onDocumentUpdated(
     // Topic resolution: if category or title has city context, use topic, else default
     const topic = 'unsafe_areas';
 
+    const category = typeof after.category === 'string' ? after.category : 'other';
+    const categoryLabel = category.replace(/_/g, ' ');
+
     logger.info('Broadcasting alert for newly verified unsafe area', {
       areaId,
       title: after.title,
-      category: after.category,
+      category,
       topic,
     });
 
@@ -52,14 +54,14 @@ export const onUnsafeAreaApproved = onDocumentUpdated(
         topic,
         notification: {
           title: '⚠️ Verified Unsafe Area Alert',
-          body: `Caution: "${after.title}" has been verified as an unsafe area (${after.category.replace('_', ' ')}).`,
+          body: `Caution: "${after.title}" has been verified as an unsafe area (${categoryLabel}).`,
         },
         data: {
           type: 'unsafe_area_approved',
           areaId,
-          category: after.category,
-          latitude: String(after.latitude),
-          longitude: String(after.longitude),
+          category,
+          latitude: typeof after.latitude === 'number' ? String(after.latitude) : '',
+          longitude: typeof after.longitude === 'number' ? String(after.longitude) : '',
         },
         android: {
           priority: 'high',

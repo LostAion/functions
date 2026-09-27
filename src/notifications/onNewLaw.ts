@@ -2,7 +2,7 @@ import { logger } from 'firebase-functions';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 
 import type { Law } from '../types';
-import { messaging } from '../utils/firebase';
+import { db, FieldValue, messaging } from '../utils/firebase';
 
 /**
  * Fires when a `laws/{lawId}` document is written (created, updated, or deleted).
@@ -11,69 +11,82 @@ import { messaging } from '../utils/firebase';
  * published (either newly created with `isPublished: true`, or updated where
  * `before.isPublished === false && after.isPublished === true`).
  *
- * Idempotent: No-op if `isPublished` did not transition to `true`.
+ * Idempotent: No-op if `isPublished` did not transition to `true`, or if the
+ * document already has `notifiedAt` (so unpublish → republish does not re-notify).
  */
-export const onNewLaw = onDocumentWritten(
-  'laws/{lawId}',
-  async (event): Promise<void> => {
-    const lawId = event.params.lawId;
+export const onNewLaw = onDocumentWritten('laws/{lawId}', async (event): Promise<void> => {
+  const lawId = event.params.lawId;
 
-    if (!event.data) {
-      logger.warn('onNewLaw: write event carried no data', { lawId });
+  if (!event.data) {
+    logger.warn('onNewLaw: write event carried no data', { lawId });
+    return;
+  }
+
+  const { before, after } = event.data;
+
+  // Document was deleted — nothing to notify
+  if (!after.exists) {
+    return;
+  }
+
+  const afterData = after.data() as Law | undefined;
+  if (!afterData || !afterData.isPublished) {
+    return;
+  }
+
+  // Already notified on an earlier publish — don't push the same item again
+  if (afterData.notifiedAt) {
+    return;
+  }
+
+  // If updating an existing document, verify that it was not already published
+  if (before.exists) {
+    const beforeData = before.data() as Law | undefined;
+    if (beforeData?.isPublished) {
       return;
     }
+  }
 
-    const { before, after } = event.data;
+  const body = afterData.shortDescription || afterData.title || '';
 
-    // Document was deleted — nothing to notify
-    if (!after.exists) {
-      return;
-    }
+  logger.info('Publishing new law notification', {
+    lawId,
+    title: afterData.title,
+  });
 
-    const afterData = after.data() as Law | undefined;
-    if (!afterData || !afterData.isPublished) {
-      return;
-    }
-
-    // If updating an existing document, verify that it was not already published
-    if (before.exists) {
-      const beforeData = before.data() as Law | undefined;
-      if (beforeData?.isPublished) {
-        return;
-      }
-    }
-
-    const body = afterData.shortDescription || afterData.title || '';
-
-    logger.info('Publishing new law notification', {
-      lawId,
-      title: afterData.title,
+  try {
+    const messageId = await messaging.send({
+      topic: 'laws',
+      notification: {
+        title: '📜 New Legal Right Published',
+        body,
+      },
+      data: {
+        type: 'law',
+        lawId,
+        title: afterData.title ?? '',
+      },
+      android: {
+        priority: 'high',
+        notification: {
+          channelId: 'safety_alerts',
+        },
+      },
     });
 
-    try {
-      const messageId = await messaging.send({
-        topic: 'laws',
-        notification: {
-          title: '📜 New Legal Right Published',
-          body,
-        },
-        data: {
-          type: 'law',
-          lawId,
-          title: afterData.title ?? '',
-        },
-        android: {
-          priority: 'high',
-          notification: {
-            channelId: 'safety_alerts',
-          },
-        },
-      });
+    logger.info('Law notification sent successfully', { lawId, messageId });
+  } catch (error: unknown) {
+    logger.error('Failed to send law notification', { lawId, error });
+    throw error;
+  }
 
-      logger.info('Law notification sent successfully', { lawId, messageId });
-    } catch (error: unknown) {
-      logger.error('Failed to send law notification', { lawId, error });
-      throw error;
-    }
-  },
-);
+  // Mark as notified outside the send's try/catch: a failure here must not
+  // cause a retry that re-sends the push.
+  try {
+    await db.collection('laws').doc(lawId).update({
+      notifiedAt: FieldValue.serverTimestamp(),
+    });
+  } catch (error: unknown) {
+    logger.error('Failed to mark law as notified', { lawId, error });
+  }
+});

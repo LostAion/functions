@@ -40,6 +40,11 @@ const BASE_AREA: Omit<UnsafeArea, 'createdAt'> = {
   voterIds: ['u1', 'u2'],
 };
 
+/** Drops `undefined` fields so a snapshot can model a document missing them. */
+function withoutUndefined<T extends object>(obj: T): T {
+  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as T;
+}
+
 function runUpdate(
   beforeOverrides: Partial<Omit<UnsafeArea, 'createdAt'>> | null,
   afterOverrides: Partial<Omit<UnsafeArea, 'createdAt'>> | null,
@@ -48,7 +53,7 @@ function runUpdate(
   const beforeSnap =
     beforeOverrides !== null
       ? testEnv.firestore.makeDocumentSnapshot(
-          { ...BASE_AREA, ...beforeOverrides },
+          withoutUndefined({ ...BASE_AREA, ...beforeOverrides }),
           `unsafeAreas/${areaId}`,
         )
       : testEnv.firestore.makeDocumentSnapshot({}, `unsafeAreas/${areaId}`);
@@ -56,7 +61,7 @@ function runUpdate(
   const afterSnap =
     afterOverrides !== null
       ? testEnv.firestore.makeDocumentSnapshot(
-          { ...BASE_AREA, ...afterOverrides },
+          withoutUndefined({ ...BASE_AREA, ...afterOverrides }),
           `unsafeAreas/${areaId}`,
         )
       : testEnv.firestore.makeDocumentSnapshot({}, `unsafeAreas/${areaId}`);
@@ -159,6 +164,30 @@ describe('onUnsafeAreaApproved', () => {
 
     await expect(runUpdate({ status: 'pending' }, { status: 'approved' })).rejects.toThrow(
       'Topic send quota exceeded',
+    );
+  });
+
+  it('falls back to "other" and blank coordinates when fields are missing', async () => {
+    sendMock.mockResolvedValueOnce('msg-area-nocat');
+
+    await runUpdate(
+      { status: 'pending', category: undefined, title: 'Old Record' },
+      {
+        status: 'approved',
+        category: undefined,
+        latitude: undefined,
+        longitude: undefined,
+        title: 'Old Record',
+      },
+    );
+
+    expect(sendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        notification: expect.objectContaining({
+          body: 'Caution: "Old Record" has been verified as an unsafe area (other).',
+        }),
+        data: expect.objectContaining({ category: 'other', latitude: '', longitude: '' }),
+      }),
     );
   });
 });
