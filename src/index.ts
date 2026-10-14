@@ -8,6 +8,9 @@ setGlobalOptions({
   maxInstances: 10,
 });
 
+// Phase 4 — Safe Journey Watchdog
+export * from './safety';
+
 // Phase 5 — Community Moderation
 export { onPostReported } from './moderation/onPostReported';
 
