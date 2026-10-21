@@ -4,7 +4,7 @@
  * surakshak-redx-org/app (Phase 5 — Community).
  */
 
-export type PostType = 'text' | 'location' | 'image' | 'help_request';
+export type PostType = 'text' | 'location' | 'image' | 'help_request' | 'incident';
 
 /** Mirrors Firestore `community/{postId}`. */
 export interface CommunityPost {
